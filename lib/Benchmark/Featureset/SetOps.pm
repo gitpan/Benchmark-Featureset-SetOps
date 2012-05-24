@@ -19,7 +19,7 @@ use Text::Xslate 'mark_raw';
 fieldhash my %html_config   => 'html_config';
 fieldhash my %module_config => 'module_config';
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 # ------------------------------------------------
 
@@ -48,6 +48,7 @@ sub _build_excluded_list
 	my($self, $module_config) = @_;
 	my($count) = 0;
 
+	my($href);
 	my(@tr);
 
 	push @tr, [{td => 'Name'}, {td => 'Notes'}];
@@ -58,9 +59,15 @@ sub _build_excluded_list
 
 		$count++;
 
+		($href = $module) =~ s/::/-/g;
+
 		# mark_raw() is needed because notes contain the HTML tag <br />.
 
-		push @tr, [{td => "$count: $module"}, {td => mark_raw($$module_config{$module}{notes} || '')}];
+		push @tr,
+		[
+			{td => mark_raw(qq|$count: <a href="https://metacpan.org/release/$href">$module</a>|)},
+			{td => mark_raw($$module_config{$module}{notes} || '')},
+		];
 	}
 
 	push @tr, [{td => 'Name'}, {td => 'Notes'}];
@@ -123,6 +130,7 @@ sub _build_module_list
 	my($self, $module_config) = @_;
 	my($count) = 0;
 
+	my($href);
 	my(%method_list);
 	my($overload, %overload);
 	my(@tr);
@@ -136,16 +144,17 @@ sub _build_module_list
 
 		$count++;
 
+		($href = $module)                  =~ s/::/-/g;
 		($method_list{$module}, $overload) = $self -> _scan_source($module_config, $module);
 		$overload{$module}                 = {%$overload};
 		$version                           = `mversion $module`;
 
 		push @tr,
 		[
-			{td => "$count: $module"},
+			{td => mark_raw(qq|$count: <a href="https://metacpan.org/release/$href">$module</a>|)},
 			{td => $version},
 			{td => scalar keys %{$method_list{$module} } },
-			{td => $$module_config{$module}{notes} || ''},
+			{td => mark_raw($$module_config{$module}{notes})},
 		];
 	}
 
@@ -170,6 +179,25 @@ sub _build_purpose
 	return \@purpose;
 
 } # End of _build_purpose;
+
+# ------------------------------------------------
+
+sub _build_report_generator
+{
+	my($self)   = @_;
+	my($module) = __PACKAGE__;
+	my($href)   = $module;
+	$href       =~ s/::/-/g;
+
+	my(@report);
+
+	push @report,
+	{left => 'Module',                                                               right => 'Version'},
+	{left => mark_raw(qq|<a href="https://metacpan.org/release/$href">$module</a>|), right => $VERSION};
+
+	return \@report;
+
+} # End of _build_report_generator;
 
 # ------------------------------------------------
 
@@ -327,13 +355,14 @@ sub run
 		(
 		 'setops.report.tx',
 		 {
-			default_css     => "$$html_config{css_url}/default.css",
-			environment     => $self -> _build_environment,
-			excluded_data   => $self -> _build_excluded_list($module_config),
-			fancy_table_css => "$$html_config{css_url}/fancy.table.css",
-			method_data     => $self -> _build_method_list($module_config, $module_list[1], $module_list[2]),
-			module_data     => $module_list[0],
-			purpose         => $self -> _build_purpose,
+			default_css      => "$$html_config{css_url}/default.css",
+			environment      => $self -> _build_environment,
+			fancy_table_css  => "$$html_config{css_url}/fancy.table.css",
+			method_data      => $self -> _build_method_list($module_config, $module_list[1], $module_list[2]),
+			modules_excluded => $self -> _build_excluded_list($module_config),
+			modules_included => $module_list[0],
+			purpose          => $self -> _build_purpose,
+			report_generator => $self -> _build_report_generator,
 		 }
 		);
 
@@ -368,7 +397,7 @@ sub _scan_source
 
 	my(@name) = grep{s/^sub\s+([a-zA-Z][a-zA-Z_]+).*$/$1/; $1} @line;
 
-	if ($name eq 'Object::Array')
+	if ($$module_config{$name}{overload_type} && ($$module_config{$name}{overload_type} == 3) )
 	{
 		# In Object::Array::Plugin::ListMoreUtils, a list of method names
 		# is installed by transferring them from List::MoreUtils.
